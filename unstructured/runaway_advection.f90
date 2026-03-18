@@ -313,8 +313,6 @@ subroutine init_particles(lrestart, ierr)
    integer :: nelm_row_temp
    integer :: ielm_min_temp, ielm_max_temp
 
-
-
    call m3dc1_mesh_getnumglobalent(0, nnodes_global)
 #ifdef USE3D
    call m3dc1_mesh_getnumglobalent(3, nelms_global)
@@ -557,12 +555,13 @@ subroutine init_particles(lrestart, ierr)
                dpar%x(3) = z_79(ipar)
                dpar%x(2) = phi_79(ipar)
                dpar%jel = itri
-               dpar%v(1) =  v0_norm/100*cre
+               dpar%v(1) =  v0_norm/100*cre*bzsign
                dpar%v(2) = 0.
                !pdata(ielm)%ion(ip)%v(1) = 100000.                        !v_parallel
 
                dpar%wt = 0.
                dpar%f0 = 0.
+               dpar%deleted = .false.
                call get_geom_terms(dpar%x, itri, geomterms, .false., ierr)
                dpar%f0=dot_product(geomterms%g, elfieldcoefs(itri)%nrev1)
                locparts2 = (itri-1)*npoints+ipar
