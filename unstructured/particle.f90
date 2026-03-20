@@ -464,7 +464,7 @@ subroutine init_particles(lrestart, ierr)
    integer :: sps, izone
    real :: npar_ratio, npar_ratio_temp, npar_ratio_local, npar_fac
    integer :: npar_temp, npar_temp_sum, i_npar_test
-   real :: bzsign, bzsign_temp
+   real :: bzsign_temp
 
    !Allocate particle pressure tensor components
 
