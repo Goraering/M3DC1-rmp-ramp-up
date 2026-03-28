@@ -81,7 +81,7 @@ def flux_average(
                 filename=filename,
                 timeslices=int(timeslices or 0),
                 points=int(points),
-                equilibrium=True,
+                equilibrium=False,
                 return_meta=True,
                 cgs=cgs,
                 mks=mks,
@@ -90,7 +90,18 @@ def flux_average(
             psi = np.asarray(p.data)[0, :, :] if np.asarray(p.data).ndim == 3 else np.asarray(p.data)
             x = np.asarray(p.r, dtype=float).reshape(-1)
             z = np.asarray(p.z, dtype=float).reshape(-1)
-        fc = flux_coordinates(psi0=psi, i0=i0, x=x, z=z, points=int(points), fbins=nb, tbins=int(points), filename=filename, **kwargs)
+        fc = flux_coordinates(
+            psi0=psi,
+            i0=i0,
+            x=x,
+            z=z,
+            slice=int(timeslices or 0),
+            points=int(points),
+            fbins=nb,
+            tbins=int(points),
+            filename=filename,
+            **kwargs,
+        )
     if phi_norm:
         xvec = np.asarray(fc.phi_norm)
     elif rho:

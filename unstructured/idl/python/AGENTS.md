@@ -108,6 +108,8 @@
   - Accept `psi_norm`, `phi_norm`, and `rho` to select the x-axis coordinate.
   - In `plot_flux_average.py`, force the x-axis to `[0, 1]` on linear scale.
   - In `plot_flux_average.py`, use a tolerance of `0.001` for sign/near-zero decisions.
+  - `plot_flux_average('q', timeslices)` should build flux coordinates using the requested `timeslices` value, not silently fall back to slice `0`.
+  - For `eqsubtract=1` files, flux-coordinate construction for `plot_flux_average('q', timeslices)` should use total fields at the requested slice, which means `read_field` combines the perturbation at `timeslices` with equilibrium slice `-1`.
 - `flux_average_field.py` correctness fix:
   - Do not transpose the `field_at_point(...)` output before flux-surface averaging.
 - `field_spectrum.py` / `read_field_spectrum.py` / `plot_field_spectrum.py` conventions:
@@ -117,6 +119,8 @@
   - `field_spectrum.py` supports x-axis selection via `psi_norm`, `phi_norm`, and `rho`.
   - `plot_field_spectrum.py` should use Matplotlib default `axes.prop_cycle` colors.
   - If `m_val` is not provided to `plot_field_spectrum.py`, choose the 5 `m` values with the largest maximum absolute amplitudes and plot those.
+  - When auto-selecting `m` values in `plot_field_spectrum.py`, ignore `NaN` amplitudes and rank using finite amplitudes across both positive and negative `m`.
+  - For each `q_target` in `plot_field_spectrum.py`, draw vertical resonance lines for all profile crossings, not just one interpolated crossing.
 - `read_scalar.py` / `plot_scalar.py` interface update:
   - Use public argument name `growth` instead of `growth_rate`.
   - Keep `growth_rate` only as a backward-compatible alias when needed.
@@ -136,6 +140,27 @@
 - `contour_and_legend.py` level handling:
   - In `contour_and_legend_single(...)`, if explicit contour level values are provided, expand that existing level span by 1% and regenerate the same number of levels over the expanded span.
   - If contour levels are not provided, or only a level count is provided, build levels from the panel min/max and expand that span by 1%.
+  - `contour_and_legend.py` supports `fill=True/False`:
+    - `fill=True` keeps the filled contour behavior.
+    - `fill=False` should draw contour lines only and skip the colorbar path.
+- `plot_field.py` interface update:
+  - Add `colorbar` argument; when `colorbar=False`, do not create a colorbar for the contour plot.
+- LCFS helper behavior:
+  - `get_lcfs.py` must filter kwargs before forwarding to `read_field(...)` and `read_lcfs(...)`, so plotting-only kwargs like `lines` do not break LCFS reads.
+- `flux_average.py` / `flux_average_field.py` return-meta behavior:
+  - `return_meta=True` should return structured Python objects, not bare tuples.
+  - `flux_average.py` returns an object with `data`, `title`, `symbol`, `units`, and `fc`.
+  - `flux_average_field.py` returns an object with `data`, `flux`, `nflux`, `area`, `volume`, and `r0`.
+- `flux_coordinates.py` toroidal-flux normalization:
+  - When building `phi_norm` / `rho`, use the last finite toroidal-flux value instead of blindly using `phi[-1]`.
+  - Build `rho` from a clipped nonnegative normalized toroidal flux to avoid all-`NaN` output when the last toroidal-flux point is invalid.
+  - When `slice >= 0`, `flux_coordinates.py` should read `psi`, `psi_r`, `psi_z`, and `I` with `equilibrium=False` so total-field reconstruction works correctly for `eqsubtract=1`.
+  - When `slice < 0`, `flux_coordinates.py` should still use `equilibrium=True` for equilibrium-only reads.
+- `read_field.py` equilibrium handling:
+  - For `equilibrium=True` with `eqsubtract=1`, force reads to slice `-1` to avoid recursive total-field reconstruction loops.
+- Legend helper behavior:
+  - `plot_legend.py` should not hardcode legend font size; it should follow the active Matplotlib rc settings.
+  - `plot_legend.py` currently uses `frameon=False`.
 - `a2cc.f90` migration notes:
   - Python port lives in `m3dc1/a2cc.py` and related EQDSK-A parsing logic lives in a separate module.
   - Preserve Fortran-style comments and split helper modules when the original Fortran calls another file.

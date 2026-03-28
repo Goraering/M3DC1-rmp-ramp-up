@@ -421,6 +421,8 @@ def read_field(
     if last:
         slice_idx = nt - 1
     if equilibrium:
+        if isubeq == 1:
+            slice_idx = -1
         if ilin == 1:
             slice_idx = -1
         if isubeq == 1:
