@@ -91,13 +91,13 @@ def field_spectrum(
         print("field_spectrum: Including Jacobian")
         b *= np.asarray(fc.j, dtype=float)[None, :, :]
 
-    c = np.fft.fft(b, axis=1)
+    c = np.fft.fft(b, axis=1)/fc.m
     m = -np.fft.fftshift(np.fft.fftfreq(int(fc.m)) * int(fc.m))
     d = np.conj(np.fft.fftshift(c, axes=1))
 
     nn = int(b.shape[0])
     if nn > 1:
-        ctor = np.fft.fft(d, axis=0)
+        ctor = np.fft.fft(d, axis=0)/nn
         nt = nn // 2 + 1
         n = np.arange(nt, dtype=int)
         dout = np.array(ctor[:nt, :, :], copy=True)

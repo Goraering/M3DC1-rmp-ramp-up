@@ -25,6 +25,7 @@ def read_parameter(
     pr: bool = False,
     mks: bool = False,
     cgs: bool = False,
+    **kwargs,
 ):
     """
     Python port of read_parameter.pro.

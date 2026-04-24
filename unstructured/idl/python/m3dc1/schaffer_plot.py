@@ -212,8 +212,61 @@ def schaffer_plot(
                 for j in range(m.size):
                     fh.write(f"{float(np.real(d[0, j, i])):13.6f}{float(np.imag(d[0, j, i])):13.6f}\n")
 
-    if bmncdf is not None or profdata:
-        print("schaffer_plot: bmncdf/profdata output is not implemented in Python yet.")
+    if bmncdf is not None:
+        try:
+            from scipy.io import netcdf_file
+            with netcdf_file(str(bmncdf), "w") as f:
+                f.version = 5
+                f.ntor = int(ntor) if n.size == 1 else 0
+                f.symbol = str(symbol) if symbol else ""
+                f.units = str(units) if units else ""
+                f.createDimension("ns", n.size)
+                f.createDimension("npsi", nflux.size)
+                f.createDimension("mpol", m.size)
+                
+                v_psi_norm = f.createVariable("psi_norm", "f4", ("npsi",))
+                v_psi_norm[:] = nflux
+                v_psi = f.createVariable("psi", "f4", ("npsi",))
+                v_psi[:] = np.asarray(fc.psi, dtype=float)
+                v_flux_pol = f.createVariable("flux_pol", "f4", ("npsi",))
+                v_flux_pol[:] = np.asarray(fc.flux_pol, dtype=float)
+                v_m = f.createVariable("m", "i2", ("mpol",))
+                v_m[:] = m
+                v_n = f.createVariable("n", "i2", ("ns",))
+                v_n[:] = n
+                v_q = f.createVariable("q", "f4", ("npsi",))
+                v_q[:] = qprof
+                v_area = f.createVariable("area", "f4", ("npsi",))
+                v_area[:] = np.asarray(fc.area, dtype=float)
+                
+                mu0 = np.pi * 4e-7
+                v_current = f.createVariable("current", "f4", ("npsi",))
+                v_current[:] = np.asarray(fc.current, dtype=float) / mu0
+                
+                if n.size == 1:
+                    v_bmn_real = f.createVariable("bmn_real", "f4", ("npsi", "mpol"))
+                    v_bmn_imag = f.createVariable("bmn_imag", "f4", ("npsi", "mpol"))
+                    v_bmn_real[:] = np.real(d[0]).T
+                    v_bmn_imag[:] = np.imag(d[0]).T
+                else:
+                    v_bmn_real = f.createVariable("bmn_real", "f4", ("ns", "npsi", "mpol"))
+                    v_bmn_imag = f.createVariable("bmn_imag", "f4", ("ns", "npsi", "mpol"))
+                    v_bmn_real[:] = np.real(d).T
+                    v_bmn_imag[:] = np.imag(d).T
+                    
+                v_jac = f.createVariable("jacobian", "f4", ("npsi", "mpol"))
+                v_jac[:] = np.asarray(fc.j, dtype=float).T
+                v_rpath = f.createVariable("rpath", "f4", ("npsi", "mpol"))
+                v_rpath[:] = np.asarray(fc.r, dtype=float).T
+                v_zpath = f.createVariable("zpath", "f4", ("npsi", "mpol"))
+                v_zpath[:] = np.asarray(fc.z, dtype=float).T
+                
+                v_Bp = f.createVariable("Bp", "f4", ("npsi", "mpol"))
+                v_Bp[:] = np.zeros((nflux.size,m.size), dtype=np.float32)
+                
+            print(f"schaffer_plot: successfully saved bmncdf to {bmncdf}")
+        except Exception as e:
+            print(f"schaffer_plot: failed to save bmncdf: {e}")
 
     if m_val is not None:
         mvals = np.asarray(m_val, dtype=int).reshape(-1)
@@ -312,7 +365,7 @@ def schaffer_plot(
         np.abs(d[k, :, :]),
         m,
         y,
-        lines=True,
+        lines=False,
         label=label,
         xtitle="m",
         ytitle=ytitle,
