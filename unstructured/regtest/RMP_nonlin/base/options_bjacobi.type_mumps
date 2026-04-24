@@ -27,6 +27,20 @@
 -hard_ksp_atol 1.e-20
 -hard_ksp_converged_reason
 
+-hardfield_pc_type bjacobi
+-hardfield_pc_bjacobi_blocks 4
+-hardfield_sub_pc_type lu
+-hardfield_sub_pc_factor_mat_solver_type mumps
+-hardfield_mat_mumps_icntl_14 50
+-hardfield_sub_mat_mumps_icntl_14 50
+-hardfield_sub_ksp_type preonly
+-hardfield_ksp_type fgmres
+-hardfield_ksp_gmres_restart 220
+-hardfield_ksp_max_it 10000
+-hardfield_ksp_rtol 1.e-9
+-hardfield_ksp_atol 1.e-20
+-hardfield_ksp_converged_reason
+
 -options_left
 -on_error_abort
 -log_view
