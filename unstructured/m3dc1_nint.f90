@@ -765,6 +765,7 @@ contains
 
        if(use_external_fields) then 
           call eval_ops(itri, psi_ext, psx79, rfac)
+          psx79 = psx79 * ext_scale
        else
           psx79 = 0.
        end if
@@ -821,9 +822,12 @@ contains
       
        if(use_external_fields) then
           call eval_ops(itri, bz_ext, bzx79, rfac)
+          bzx79 = bzx79 * ext_scale
 #if defined(USECOMPLEX) || defined(USE3D)    
           call eval_ops(itri, bf_ext, bfx79, rfac)
           call eval_ops(itri, bfp_ext, bfpx79, rfac)
+          bfx79 = bfx79 * ext_scale
+          bfpx79 = bfpx79 * ext_scale
 #endif
        else
           bzx79 = 0.
