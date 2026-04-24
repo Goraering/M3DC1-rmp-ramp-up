@@ -100,6 +100,22 @@ subroutine onestep
   integer :: icount, maxiter
 #endif
 
+  ext_scale = 1.0
+  if (irmp_inc_start .ge. 0 .or. irmp_inc_end .gt. 0) then
+    if (ntime .le. irmp_inc_start) then
+      ext_scale = 0.0
+    else if (ntime .ge. irmp_inc_end) then
+      ext_scale = 1.0
+    else
+      ext_scale= real(ntime - irmp_inc_start,8)/ real(irmp_inc_end - irmp_inc_start, 8)
+    end if
+  end if
+
+  if(myrank.eq.0 .and. iprint.ge.1) then
+    print *, "ext_scale =", ext_scale
+  end if
+
+
   ! Determine whether matrices should be re-calculated
   if(first_time &
        .or. (linear.eq.0 .and. mod(ntime,nskip).eq.0) &
