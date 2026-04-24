@@ -206,6 +206,9 @@ module basic
   real :: eps         ! size of initial perturbation
   integer :: iwave    ! which wave to initialize in wave prop. equilibrium
   integer :: irmp     ! 1 = read rmp coil/currents from rmp_coil.dat, rmp_current.dat
+  integer :: irmp_inc_start  ! Start of rmpfield ramp up, external field is 0 if ntimes le inc_start
+  integer :: irmp_inc_end    ! End of rmpfield ramp up, external field is equal to the input if ntimes ge inc_end
+  real :: ext_scale          ! Scale factor for the external field
   integer :: iread_ext_field
   integer :: isample_ext_field
   integer :: isample_ext_field_pol
