@@ -113,6 +113,7 @@ private:
   int setUpRemoteAStruct();
   int setKspType();
   int _kspSet;
+  int _fourierSet; // selected by -fouriersolve; guard failed solves
   KSP _ksp;
   Mat remoteA;
 
