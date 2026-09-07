@@ -9,6 +9,7 @@
 *******************************************************************************/
 #ifdef M3DC1_PETSC
 #include "m3dc1_matrix.h"
+#include "m3dc1_toroidal_fourier.h"
 #include "PCU.h"
 #include "apf.h"
 #include "apfMDS.h"
@@ -883,8 +884,12 @@ matrix_solve::matrix_solve(int i, int s, FieldID f) : m3dc1_matrix(i, s, f) {
   _BgmgSet = 0;
   _BgmgfsSet=0;
   _kspSet = 0;
+  _fourierSet = 0;
   _fsSet=0;
   _fsBgmgSet=0;
+  field0=NULL;
+  field1=NULL;
+  field2=NULL;
   _LineSet=0;
   remotePidOwned = NULL;
   remoteNodeRow = NULL; // <pid, <locnode>, numAdj>
@@ -1342,8 +1347,10 @@ int matrix_solve::solve(FieldID field_id) {
   //int ierr;= VecDuplicate(b, &x);
   //CHKERRQ(ierr);
 
-  if (!_kspSet)
-    setKspType();
+  if (!_kspSet) {
+    ierr = setKspType();
+    CHKERRQ(ierr);
+  }
   if (_kspSet == 2) {
     ierr = KSPSetOperators(_ksp, _A, _A);
     CHKERRQ(ierr);
@@ -1356,6 +1363,22 @@ int matrix_solve::solve(FieldID field_id) {
 
   ierr = KSPSolve(_ksp, b, x);
   CHKERRQ(ierr);
+  KSPConvergedReason solve_reason = KSP_CONVERGED_ITERATING;
+  ierr = KSPGetConvergedReason(_ksp, &solve_reason);
+  CHKERRQ(ierr);
+  if ((mymatrix_id == 6 || _fourierSet) && solve_reason < 0) {
+    if (!PCU_Comm_Self())
+      std::cout << "matrix " << mymatrix_id << " KSP diverged (reason "
+                << (int)solve_reason
+                << "); refusing to copy an invalid solution" << std::endl;
+    ierr = VecDestroy(&b);
+    CHKERRQ(ierr);
+    ierr = VecDestroy(&x);
+    CHKERRQ(ierr);
+    PetscCheck(solve_reason >= 0, PETSC_COMM_WORLD, PETSC_ERR_NOT_CONVERGED,
+               "Matrix %" PetscInt_FMT " KSP diverged with reason %d",
+               mymatrix_id, (int)solve_reason);
+  }
   //  PetscInt its;
   ierr = KSPGetIterationNumber(_ksp, &its);
   CHKERRQ(ierr);
@@ -1383,8 +1406,10 @@ int matrix_solve::solve_with_guess(FieldID field_id, FieldID xVec_guess) {
   copyField2PetscVec_5(xVec_guess, x, get_scalar_type());
   KSPType ksptype;
 
-  if (!_kspSet)
-    setKspType();
+  if (!_kspSet) {
+    ierr = setKspType();
+    CHKERRQ(ierr);
+  }
   if (_kspSet == 2) {
     ierr = KSPSetOperators(_ksp, _A, _A);
     CHKERRQ(ierr);
@@ -1407,6 +1432,22 @@ int matrix_solve::solve_with_guess(FieldID field_id, FieldID xVec_guess) {
   }
   ierr = KSPSolve(_ksp, b, x);
   CHKERRQ(ierr);
+  KSPConvergedReason solve_reason = KSP_CONVERGED_ITERATING;
+  ierr = KSPGetConvergedReason(_ksp, &solve_reason);
+  CHKERRQ(ierr);
+  if ((mymatrix_id == 6 || _fourierSet) && solve_reason < 0) {
+    if (!PCU_Comm_Self())
+      std::cout << "matrix " << mymatrix_id << " KSP diverged (reason "
+                << (int)solve_reason
+                << "); refusing to copy an invalid solution" << std::endl;
+    ierr = VecDestroy(&b);
+    CHKERRQ(ierr);
+    ierr = VecDestroy(&x);
+    CHKERRQ(ierr);
+    PetscCheck(solve_reason >= 0, PETSC_COMM_WORLD, PETSC_ERR_NOT_CONVERGED,
+               "Matrix %" PetscInt_FMT " KSP diverged with reason %d",
+               mymatrix_id, (int)solve_reason);
+  }
   ierr = KSPGetIterationNumber(_ksp, &its);
   CHKERRQ(ierr);
 
@@ -1425,6 +1466,48 @@ int matrix_solve::solve_with_guess(FieldID field_id, FieldID xVec_guess) {
 
 int matrix_solve::setKspType() {
   PetscErrorCode ierr;
+  const PetscInt max_fouriersolve_ids = 128;
+  PetscInt fouriersolve[max_fouriersolve_ids + 1];
+  PetscInt num_fouriersolve = max_fouriersolve_ids + 1;
+  PetscBool has_fouriersolve = PETSC_FALSE;
+  PetscBool use_fourier = PETSC_FALSE;
+  PetscBool has_legacy_tfsolve = PETSC_FALSE;
+  PetscBool has_legacy_tf_prefix = PETSC_FALSE;
+  ierr = PetscOptionsGetIntArray(NULL, NULL, "-fouriersolve", fouriersolve,
+                                 &num_fouriersolve, &has_fouriersolve);
+  CHKERRQ(ierr);
+  PetscCheck(!has_fouriersolve || num_fouriersolve <= max_fouriersolve_ids,
+             PETSC_COMM_WORLD, PETSC_ERR_ARG_SIZ,
+             "-fouriersolve accepts at most %" PetscInt_FMT " matrix ids",
+             max_fouriersolve_ids);
+  ierr = PetscOptionsHasName(NULL, NULL, "-tfsolve", &has_legacy_tfsolve);
+  CHKERRQ(ierr);
+  char *fourier_options = NULL, *legacy_tf_option = NULL;
+  ierr = PetscOptionsGetAll(NULL, &fourier_options);
+  CHKERRQ(ierr);
+  if (fourier_options) {
+    ierr = PetscStrstr(fourier_options, "-hardfield_tf_", &legacy_tf_option);
+    CHKERRQ(ierr);
+    has_legacy_tf_prefix = legacy_tf_option ? PETSC_TRUE : PETSC_FALSE;
+  }
+  ierr = PetscFree(fourier_options);
+  CHKERRQ(ierr);
+  PetscCheck(!has_legacy_tfsolve, PETSC_COMM_WORLD, PETSC_ERR_ARG_INCOMP,
+             "-tfsolve has been renamed to -fouriersolve; use, for example, "
+             "-fouriersolve 6");
+  PetscCheck(!has_legacy_tf_prefix, PETSC_COMM_WORLD, PETSC_ERR_ARG_INCOMP,
+             "-hardfield_tf_* options have been renamed to "
+             "-hardfield_fourier_*");
+  if (has_fouriersolve) {
+    for (PetscInt i = 0; i < num_fouriersolve; ++i) {
+      PetscCheck(fouriersolve[i] >= 0, PETSC_COMM_WORLD,
+                 PETSC_ERR_ARG_OUTOFRANGE,
+                 "-fouriersolve matrix ids must be nonnegative, not %"
+                 PetscInt_FMT,
+                 fouriersolve[i]);
+      if (mymatrix_id == fouriersolve[i]) use_fourier = PETSC_TRUE;
+    }
+  }
   ierr = KSPCreate(MPI_COMM_WORLD, &_ksp);
   CHKERRQ(ierr);
 
@@ -1445,6 +1528,13 @@ int matrix_solve::setKspType() {
   assert(total_num_dof / num_values ==
          C1TRIDOFNODE * (mesh->getDimension() - 1));
 
+  PetscCheck(!use_fourier || mesh->getDimension() == 3, PETSC_COMM_WORLD,
+             PETSC_ERR_SUP,
+             "-fouriersolve selected matrix %" PetscInt_FMT
+             ", but the toroidal Fourier preconditioner requires a 3-D "
+             "mesh with more than one toroidal plane",
+             mymatrix_id);
+
   // 2D: direct solve with SuperLU_dist
   if (mesh->getDimension() == 2) {
     ierr = KSPSetType(_ksp, KSPPREONLY);
@@ -1463,77 +1553,113 @@ int matrix_solve::setKspType() {
     // default: block jaconi preconditioner
     // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_superludist
 
-    // -mgsolve: block geometric MG, smoother = BJacobi
-    // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_mg
+    // Parse all matrix-id selectors before configuring a PC so a conflicting
+    // selector cannot leave a half-configured KSP when errors are returned
+    // instead of aborting.
     PetscInt ss = 2, mgsolve[2];
     mgsolve[0] = -1;
     mgsolve[1] = -1;
     ierr = PetscOptionsGetIntArray(NULL, NULL, "-mgsolve", mgsolve, &ss, NULL);
     CHKERRQ(ierr);
+    PetscInt mgfs = -1;
+    ierr = PetscOptionsGetInt(NULL, NULL, "-mgfs", &mgfs, NULL);
+    CHKERRQ(ierr);
+    PetscInt fssolve = -1;
+    ierr = PetscOptionsGetInt(NULL, NULL, "-fssolve", &fssolve, NULL);
+    CHKERRQ(ierr);
+    PetscInt fsmg = -1;
+    ierr = PetscOptionsGetInt(NULL, NULL, "-fsmg", &fsmg, NULL);
+    CHKERRQ(ierr);
+    PetscInt lsolve = -1;
+    ierr = PetscOptionsGetInt(NULL, NULL, "-lsolve", &lsolve, NULL);
+    CHKERRQ(ierr);
+
+    // -fouriersolve: diagonalize the selected full matrix's toroidal
+    // block-circulant average.  The Fourier PC is field agnostic and retains
+    // every unknown and every field coupling in the selected matrix.  Do not
+    // combine it with another custom solver selection for the same matrix.
+    if (use_fourier) {
+      PetscCheck(mymatrix_id != mgsolve[0] && mymatrix_id != mgsolve[1] &&
+                     mymatrix_id != mgfs && mymatrix_id != fssolve &&
+                     mymatrix_id != fsmg && mymatrix_id != lsolve,
+                 PETSC_COMM_WORLD, PETSC_ERR_ARG_INCOMP,
+                 "-fouriersolve cannot be combined with -mgsolve, -mgfs, "
+                 "-fssolve, -fsmg, or -lsolve for matrix %" PetscInt_FMT,
+                 mymatrix_id);
+      if (!PCU_Comm_Self())
+        std::cout << "[M3DC1 INFO] " << __func__ << ": matrix "
+                  << mymatrix_id
+                  << " is going to use a full-matrix toroidal Fourier "
+                     "preconditioner\n";
+    }
+
+    // -mgsolve: block geometric MG, smoother = BJacobi
+    // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_mg
     if (mymatrix_id == mgsolve[0] || mymatrix_id == mgsolve[1]) {
       if (!PCU_Comm_Self())
         std::cout << "[M3DC1 INFO] " << __func__ << ": matrix " << mymatrix_id
                   << " is going to use BGMG preconditioner\n";
-      if (!_BgmgSet)
-        setBgmgType();
+      if (!_BgmgSet) {
+        ierr = setBgmgType();
+        CHKERRQ(ierr);
+      }
     }
 
     // -mgfs: block geometric MG, smoother = FieldSplit(BJacobi)
     // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_mgfs
-    PetscInt mgfs = -1;
-    ierr = PetscOptionsGetInt(NULL, NULL, "-mgfs", &mgfs, NULL);
-    CHKERRQ(ierr);
     if (mymatrix_id == mgfs) {
       if (!PCU_Comm_Self())
         std::cout << "[M3DC1 INFO] " << __func__ << ": matrix " << mymatrix_id
                   << " is going to use BGMGFieldSplit preconditioner\n";
-      if (!_BgmgSet)
-        setBgmgFSType();
+      if (!_BgmgSet) {
+        ierr = setBgmgFSType();
+        CHKERRQ(ierr);
+      }
     }
 
     // -fssolve: FieldSplit (3 fields: U, Omega, Chi)
     // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_fs
-    PetscInt fssolve = -1;
-    ierr = PetscOptionsGetInt(NULL, NULL, "-fssolve", &fssolve, NULL);
-    CHKERRQ(ierr);
     if (mymatrix_id == fssolve) {
       if (!PCU_Comm_Self())
         std::cout << "[M3DC1 INFO] " << __func__ << ": matrix " << mymatrix_id
                   << " is going to use FieldSplit preconditioner\n";
-      if (!_fsSet)
-        setFSType();
+      if (!_fsSet) {
+        ierr = setFSType();
+        CHKERRQ(ierr);
+      }
     }
 
     // -fsmg: FieldSplit + block geometric MG on each sub-KSP
     // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_fsmg
-    PetscInt fsmg = -1;
-    ierr = PetscOptionsGetInt(NULL, NULL, "-fsmg", &fsmg, NULL);
-    CHKERRQ(ierr);
     if (mymatrix_id == fsmg) {
       if (!PCU_Comm_Self())
         std::cout << "[M3DC1 INFO] " << __func__ << ": matrix " << mymatrix_id
                   << " is going to use FieldSplitBgmg preconditioner\n";
-      if (!_fsBgmgSet)
-        setFSBgmgType();
+      if (!_fsBgmgSet) {
+        ierr = setFSBgmgType();
+        CHKERRQ(ierr);
+      }
     }
 
     // -lsolve: line solver (FieldSplit with one split per mesh entity)
     // solver option: refer to unstructured/regtest/pellet/base/options_bjacobi.type_ls
-    PetscInt lsolve = -1;
-    ierr = PetscOptionsGetInt(NULL, NULL, "-lsolve", &lsolve, NULL);
-    CHKERRQ(ierr);
     if (mymatrix_id == lsolve) {
       if (!PCU_Comm_Self())
         std::cout << "[M3DC1 INFO] " << __func__ << ": matrix " << mymatrix_id
                   << " is going to use LineSolve preconditioner\n";
-      if (!_LineSet)
-        setLSType();
-                std::cout<<"[M3DC1 INFO] "<<__func__<<": _LineSet="<<_LineSet<<"\n";
+      if (!_LineSet) {
+        ierr = setLSType();
+        CHKERRQ(ierr);
+      }
+      std::cout << "[M3DC1 INFO] " << __func__ << ": _LineSet=" << _LineSet
+                << "\n";
     }
 
     if (mymatrix_id == 5) {
       ierr = KSPSetOptionsPrefix(_ksp, "hard_");
+      CHKERRQ(ierr);
       ierr = MatViewFromOptions(_A, NULL, "-A_view");
+      CHKERRQ(ierr);
     }
 
     if (mymatrix_id == 6) {
@@ -1557,13 +1683,38 @@ int matrix_solve::setKspType() {
     }
   }
 
-  // Give matrix 6 its own PETSc option namespace only when the user supplies
-  // at least one -hardfield_* option.  Otherwise keep the KSP unprefixed so
-  // existing options_bjacobi files continue to provide its default options.
+  // Normally give matrix 6 its own namespace only when a -hardfield_* option
+  // is present, preserving old unprefixed option files.
 
+  // Select a flexible outer method by default. KSPSetFromOptions below may
+  // override it, while -fouriersolve remains authoritative for the PC type.
+  if (use_fourier) {
+    ierr = KSPSetType(_ksp, KSPFGMRES);
+    CHKERRQ(ierr);
+  }
 
   ierr = KSPSetFromOptions(_ksp);
   CHKERRQ(ierr);
+
+  // Install after KSPSetFromOptions so an unprefixed global -pc_type used by
+  // other matrices cannot replace the explicitly selected Fourier PC.  The
+  // mode prefix appends "fourier_" to the already-selected outer prefix.
+  if (use_fourier) {
+    PC fourier_pc = NULL;
+    PetscBool is_shell = PETSC_FALSE;
+    ierr = m3dc1_configure_toroidal_fourier_pc(_ksp, _A, mymatrix_id);
+    CHKERRQ(ierr);
+    _fourierSet = 1;
+    ierr = KSPGetPC(_ksp, &fourier_pc);
+    CHKERRQ(ierr);
+    ierr = PetscObjectTypeCompare((PetscObject)fourier_pc, PCSHELL,
+                                  &is_shell);
+    CHKERRQ(ierr);
+    PetscCheck(is_shell, PETSC_COMM_WORLD, PETSC_ERR_PLIB,
+               "-fouriersolve failed to install its shell PC on full matrix %"
+               PetscInt_FMT,
+               mymatrix_id);
+  }
   _kspSet = 1;
   return M3DC1_SUCCESS;
 }
