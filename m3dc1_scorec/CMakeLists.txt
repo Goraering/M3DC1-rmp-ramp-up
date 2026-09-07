@@ -68,6 +68,7 @@ set(SOURCES
   src/m3dc1_adapt.cc
   src/m3dc1_entity.cc
   src/m3dc1_sizeField.cc
+  src/m3dc1_toroidal_fourier.cc
   src/PolyNomial.cc
   src/ReducedQuinticImplicit.cc
   src/CMODGeoExpression.cc
@@ -93,6 +94,7 @@ set(HEADERS
   include/ReducedQuinticImplicit.h
   include/CMODGeoExpression.h  
   include/m3dc1_matrix.h
+  include/m3dc1_toroidal_fourier.h
   include/m3dc1_sizeField.h
   #include/ReducedQuinticExplicit.h
   include/slntransferUtil.h
@@ -235,5 +237,4 @@ ${CMAKE_Fortran_COMPILER_FULLPATH}")
 message("CMAKE_Fortran_COMPILER = ${CMAKE_Fortran_COMPILER}")
 message("CMAKE_Fortran_FLAGS = ${CMAKE_Fortran_FLAGS}")
 message("CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
-
 
